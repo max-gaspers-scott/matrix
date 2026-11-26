@@ -1,0 +1,31 @@
+[package]
+name = "bc-bridge"
+version = "0.1.0"
+edition = "2024"
+description = "Bens Chat <-> Matrix appservice (WhatsApp / Google Messages via mautrix)"
+
+[[bin]]
+name = "bc-bridge"
+path = "src/main.rs"
+
+[dependencies]
+bens-chat-shared = { path = "/home/mgs/bens_chat/shared" }
+tokio = { version = "1", features = ["rt", "macros", "sync", "net", "signal", "time", "io-util"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query"] }
+# same major as the shared crate so only one copy is linked
+reqwest = { version = "0.13", features = ["json", "query"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio", "migrate", "macros"] }
+uuid = { version = "1", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }
+dotenvy = "0.15"
+qrcode = { version = "0.14", default-features = false }
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
+opt-level = 3
+panic = "abort"

@@ -1,0 +1,72 @@
+# Bens Chat <-> WhatsApp / Google Messages bridge stack.
+# Run scripts/setup.sh once before the first `docker compose up -d`.
+name: bc-bridge
+
+x-common: &common
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  tuwunel:
+    <<: *common
+    image: ghcr.io/matrix-construct/tuwunel:latest
+    command: ["-c", "/etc/tuwunel.toml"]
+    # Thread pools size themselves from the visible CPU count; cap it so a
+    # many-core host doesn't inflate RAM (a 1-2 vCPU VPS gets this anyway).
+    cpus: 2
+    volumes:
+      - ./config/tuwunel.toml:/etc/tuwunel.toml:ro
+      - ./config/registrations:/registrations:ro
+      - ./data/tuwunel:/var/lib/tuwunel
+    # Loopback only, for a local Matrix client while testing. Never expose publicly.
+    ports: ["127.0.0.1:8008:8008"]
+    networks: [matrix]
+
+  whatsapp:
+    <<: *common
+    image: dock.mau.dev/mautrix/whatsapp:latest
+    volumes: ["./config/whatsapp:/data"]
+    depends_on: [tuwunel]
+    networks: [matrix]
+
+  gmessages:
+    <<: *common
+    image: dock.mau.dev/mautrix/gmessages:latest
+    volumes: ["./config/gmessages:/data"]
+    depends_on: [tuwunel]
+    networks: [matrix]
+
+  # Our Rust appservice. Admin commands:
+  #   docker compose exec bridge /bc-bridge help
+  bridge:
+    <<: *common
+    build:
+      context: ./bridge
+      additional_contexts:
+        shared: /home/mgs/bens_chat/shared
+    image: bc-bridge:latest
+    user: "${BRIDGE_UID:-1000}:${BRIDGE_GID:-1000}"
+    env_file: .env
+    environment:
+      HOMESERVER_URL: http://tuwunel:8008
+      LISTEN_ADDR: 0.0.0.0:29400
+      DATABASE_URL: sqlite:///data/bridge.db
+      BENS_CHAT_URL: http://app:8081
+      # TEMPORARY: the shared crate's Bot dials localhost:9821; forward it.
+      # Remove once the shared crate reads its URL from the environment.
+      LOCALHOST_SHIM_TARGET: app:8081
+      WHATSAPP_PROVISION_URL: http://whatsapp:29318
+      GMESSAGES_PROVISION_URL: http://gmessages:29336
+      RUST_LOG: bc_bridge=info
+    volumes: ["./data/bridge:/data"]
+    depends_on: [tuwunel]
+    networks: [matrix, benschat]
+
+networks:
+  matrix: {}
+  # The Bens Chat backend's compose network (service `app`, port 8081).
+  benschat:
+    external: true
+    name: bens_chat_default
